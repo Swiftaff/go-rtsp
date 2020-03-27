@@ -6,17 +6,13 @@ import (
 	"os"
 )
 
-const (
-	connType = "tcp"
-)
-
 //Server - basic tcp server
 //from https://coderwall.com/p/wohavg/creating-a-simple-tcp-server-in-go
 func Server(url string) {
 	fmt.Printf("SERVER: Listening on %s...\n", url)
 
 	// Listen for incoming connections.
-	l, err := net.Listen(connType, url)
+	l, err := net.Listen("tcp", url)
 	if err != nil {
 		fmt.Println("Error listening:", err.Error())
 		os.Exit(1)
@@ -39,16 +35,23 @@ func Server(url string) {
 // Handles incoming requests.
 func handleRequest(conn net.Conn) {
 	// Make a buffer to hold incoming data.
-	buf := make([]byte, 1024)
-	// Read the incoming connection into the buffer.
-	reqLen, err := conn.Read(buf)
-	if err != nil {
-		fmt.Println("Error reading:", err.Error())
-	}
+	isOpen := true
+	for isOpen == true {
+		buf := make([]byte, 1024)
+		// Read the incoming connection into the buffer.
+		reqLen, err := conn.Read(buf)
+		if err != nil {
+			fmt.Println("Error reading:", err.Error())
+			isOpen = false
+		}
 
-	message := fmt.Sprintf("Message received of %d bytes: %s%s", reqLen, buf, buf)
-	// Send a response back to person contacting us.
-	conn.Write([]byte(message))
-	// Close the connection when you're done with it.
-	//conn.Close()
+		fmt.Printf("Message received of %d bytes: %s\n", reqLen, buf[0:reqLen])
+		//message := fmt.Sprintf("Message received of %d bytes: %s%s", reqLen, buf, buf)
+		// Send a response back to person contacting us.
+		//conn.Write([]byte(message))
+		// Close the connection when you're done with it.
+		//conn.Close()
+	}
+	conn.Close()
+	os.Exit(1)
 }
