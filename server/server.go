@@ -35,24 +35,22 @@ func Server(url string) {
 // Handles incoming requests.
 func handleRequest(conn net.Conn) {
 	// Make a buffer to hold incoming data.
-	isOpen := true
-	for isOpen == true {
+	len := 1
+	for len > 0 {
 		buf := make([]byte, 1024)
 		// Read the incoming connection into the buffer.
 		reqLen, err := conn.Read(buf)
+		len = reqLen
 		if err != nil {
 			fmt.Println("Error reading:", err.Error())
-			isOpen = false
 		}
 
 		returnMessage := fmt.Sprintf("Message received of %d bytes: %s\n", reqLen, buf[0:reqLen])
 		fmt.Printf(returnMessage)
-		//message := fmt.Sprintf("Message received of %d bytes: %s%s", reqLen, buf, buf)
 		// Send a response back to person contacting us.
 		conn.Write([]byte(returnMessage))
-		// Close the connection when you're done with it.
-		//conn.Close()
 	}
+	// Close the connection when you're done with it.
 	conn.Close()
 	os.Exit(1)
 }

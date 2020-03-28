@@ -8,7 +8,9 @@ import (
 )
 
 func main() {
+	//url := "127.0.0.1:5000"
 	url := "127.0.0.1:5000"
+	url := "192.168.1.11:88"
 
 	var which int
 	fmt.Printf("0 = Server. 1 = Client\n")

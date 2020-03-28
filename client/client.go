@@ -16,7 +16,7 @@ func Client(url string) {
 	command := "Hello"
 	for command != "end" {
 		input := getUserInput()
-		command = getCommand(input)
+		command = getCommand(input, url)
 		connectionWrite(c, command)
 		connectionRead(c)
 	}
@@ -45,35 +45,47 @@ func connectionClose(c *net.TCPConn, url string) {
 }
 
 func connectionWrite(c *net.TCPConn, command string) {
-	writeBytes, err := c.Write([]byte(command))
+	//count, err := bufio.NewWriter(c).WriteString(command)
+	count, err := c.Write([]byte(command))
 	if err != nil {
-		fmt.Println("Write Error: ", err, writeBytes)
+		fmt.Println("Write Error: ", err, count)
 	}
-	fmt.Printf("Sent command: %s\n", command)
+	fmt.Printf("Sent command %d chars\n\r%s\n", count, command)
 }
 
 func connectionRead(c *net.TCPConn) {
-	message := ""
-	for len(message) == 0 {
-		message, _ = bufio.NewReader(c).ReadString('\n')
-		fmt.Print("Message Received:", string(message))
+	//message := ""
+	//for len(message) == 0 {
+	for {
+		fmt.Printf("Receiving1\n")
+		//test, _ := c.Read([]byte("C"))
+		//fmt.Printf("Message Received: %d", test)
+		buf := bufio.NewReader(c)
+		message, _ := buf.ReadString(' ')
+		fmt.Printf("Receiving2\n%s", message)
+		//if err != nil {
+		//	fmt.Println("Read Error: ", err)
+		//}
+		//fmt.Printf("Receiving3\n")
+		//fmt.Printf("Message Received: %s", message)
 	}
 }
 
 func getUserInput() int {
 	input := 0
-	fmt.Println("2 = options. 3 = world. 4. end")
+	fmt.Println("2 = options. 3 = CFNL. 4. end")
 	fmt.Scan(&input)
 	return input
 }
 
-func getCommand(input int) string {
+func getCommand(input int, url string) string {
 	command := ""
 	switch input {
 	case 2:
+		command = fmt.Sprintf("OPTIONS rtsp://%s RTSP/1.0\r\nCSeq: 1", url) //\r\nCseq: 1\r\nRequire: implicit-play\r\n", url)
 		command = "Hello"
 	case 3:
-		command = "world"
+		command = "\r\n"
 	case 4:
 		command = "end"
 	}
