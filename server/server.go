@@ -45,10 +45,11 @@ func handleRequest(conn net.Conn) {
 			isOpen = false
 		}
 
-		fmt.Printf("Message received of %d bytes: %s\n", reqLen, buf[0:reqLen])
+		returnMessage := fmt.Sprintf("Message received of %d bytes: %s\n", reqLen, buf[0:reqLen])
+		fmt.Printf(returnMessage)
 		//message := fmt.Sprintf("Message received of %d bytes: %s%s", reqLen, buf, buf)
 		// Send a response back to person contacting us.
-		//conn.Write([]byte(message))
+		conn.Write([]byte(returnMessage))
 		// Close the connection when you're done with it.
 		//conn.Close()
 	}

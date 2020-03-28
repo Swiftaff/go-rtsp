@@ -11,7 +11,7 @@ func main() {
 	url := "127.0.0.1:5000"
 
 	var which int
-	fmt.Println("0 = Server. 1 = Client")
+	fmt.Printf("0 = Server. 1 = Client\n")
 	fmt.Scan(&which)
 
 	switch which {
