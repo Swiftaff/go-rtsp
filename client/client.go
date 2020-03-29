@@ -39,11 +39,12 @@ func newRtspConn(domain string, port int, username, password string) rtspConn {
 func Client(domain string, port int, username, password string) {
 	rtsp := newRtspConn(domain, port, username, password)
 	command := ""
+	expectedEndLine := ""
 	for command != "end" {
 		input := getUserInput()
-		command = getCommand(input, rtsp)
+		command, expectedEndLine = getCommand(input, rtsp)
 		connectionWrite(rtsp.c, command)
-		rtsp = connectionRead(rtsp)
+		rtsp = connectionRead(rtsp, expectedEndLine)
 	}
 	connectionClose(rtsp)
 }
@@ -77,14 +78,15 @@ func connectionWrite(c *net.TCPConn, command string) {
 	fmt.Printf("Sent command %d chars\n%s\n", count, command)
 }
 
-func connectionRead(r rtspConn) rtspConn {
+func connectionRead(r rtspConn, expectedEndLine string) rtspConn {
 	scanner := bufio.NewScanner(bufio.NewReader(r.c))
 	data := ""
 	line := ""
 	for scanner.Scan() {
 		line = scanner.Text()
 		data += line + "\n"
-		if len(line) == 0 {
+		fmt.Printf("LINE:%s\n", line)
+		if line == expectedEndLine {
 			break
 		}
 	}
@@ -125,11 +127,13 @@ func getUserInput() int {
 	return input
 }
 
-func getCommand(input int, r rtspConn) string {
+func getCommand(input int, r rtspConn) (string, string) {
 	command := ""
+	expectedEndLine := ""
 	switch input {
 	case 1:
 		command = fmt.Sprintf("OPTIONS %s RTSP/1.0\r\nCSeq: 1\r\n\r\n", r.uri)
+		expectedEndLine = ""
 		/*
 			Client Request
 			>>>>>>>>>>>>>>>>>>>>>>>
@@ -145,6 +149,7 @@ func getCommand(input int, r rtspConn) string {
 		*/
 	case 2:
 		command = fmt.Sprintf("DESCRIBE %s RTSP/1.0\r\nAccept: application/sdp\r\nCSeq: 2\r\n\r\n", r.uri)
+		expectedEndLine = ""
 		/*
 			Client Request
 			>>>>>>>>>>>>>>>>>>>>>>>
@@ -163,6 +168,7 @@ func getCommand(input int, r rtspConn) string {
 		method := "DESCRIBE"
 		response := getResponse(r, method)
 		command = fmt.Sprintf("%s %s RTSP/1.0\r\nAccept: application/sdp\r\nCSeq: 3\r\nAuthorization: Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"\r\n\r\n", method, r.uri, r.username, r.realm, r.nonce, r.uri, response)
+		expectedEndLine = "a=control:track2"
 		/*
 			Client Request
 			>>>>>>>>>>>>>>>>>>>>>>>
@@ -175,15 +181,38 @@ func getCommand(input int, r rtspConn) string {
 			>>>>>>>>>>>>>>>>>>>>>>>
 			RTSP/1.0 200 OK
 			CSeq: 3
-			Date: Sun, Mar 29 2020 14:50:03 GMT
+			Date: Sun, Mar 29 2020 04:55:49 GMT
 			Content-Base: rtsp://192.168.1.11:65534/videoMain/
 			Content-Type: application/sdp
 			Content-Length: 543
+
+			v=0
+			o=- 1582535758913729 1 IN IP4 192.168.1.11
+			s=IP Camera Video
+			i=videoMain
+			t=0 0
+			a=tool:LIVE555 Streaming Media v2014.02.10
+			a=type:broadcast
+			a=control:*
+			a=range:npt=0-
+			a=x-qt-text-nam:IP Camera Video
+			a=x-qt-text-inf:videoMain
+			m=video 0 RTP/AVP 96
+			c=IN IP4 0.0.0.0
+			b=AS:96
+			a=rtpmap:96 H264/90000
+			a=fmtp:96 packetization-mode=1;profile-level-id=64001F;sprop-parameter-sets=Z2QAH6w0zAUAW/8BagICAoAAAfRo7jwwdDACgoACgiXeXGhgBQUABQRLvLhQ,aO48MA==
+			a=control:track1
+			m=audio 0 RTP/AVP 0
+			c=IN IP4 0.0.0.0
+			b=AS:64
+			a=control:track2
 		*/
 	case 9:
 		command = "end"
+		expectedEndLine = ""
 	}
-	return command
+	return command, expectedEndLine
 }
 
 func getResponse(r rtspConn, method string) string {
