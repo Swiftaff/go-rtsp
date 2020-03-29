@@ -8,18 +8,19 @@ import (
 
 //Server - basic tcp server
 //from https://coderwall.com/p/wohavg/creating-a-simple-tcp-server-in-go
-func Server(url string) {
-	fmt.Printf("SERVER: Listening on %s...\n", url)
+func Server(domain string, port int) {
+	domainport := fmt.Sprintf("%s:%d", domain, port)
+	fmt.Printf("SERVER: Listening on %s...\n", domainport)
 
 	// Listen for incoming connections.
-	l, err := net.Listen("tcp", url)
+	l, err := net.Listen("tcp", domainport)
 	if err != nil {
 		fmt.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
 	// Close the listener when the application closes.
 	defer l.Close()
-	fmt.Println("Listening on " + url)
+	fmt.Println("Listening on " + domainport)
 	for {
 		// Listen for an incoming connection.
 		conn, err := l.Accept()

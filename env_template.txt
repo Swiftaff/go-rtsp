@@ -1,0 +1,15 @@
+package env
+//Use this file as a template for recreating the .gitignore'd './env/env.go' file
+
+import (
+	"os"
+)
+
+//Env environment variables for secrets
+//don't forget to update the template file if you make changes here
+func Env() {
+	os.Setenv("username", "")
+	os.Setenv("password", "")
+	os.Setenv("domain", "")
+	os.Setenv("port", "")
+}
