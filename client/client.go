@@ -54,25 +54,22 @@ func connectionWrite(c *net.TCPConn, command string) {
 }
 
 func connectionRead(c *net.TCPConn) {
-	//message := ""
-	//for len(message) == 0 {
-	for {
-		fmt.Printf("Receiving1\n")
-		//test, _ := c.Read([]byte("C"))
-		//fmt.Printf("Message Received: %d", test)
-		message, err := bufio.NewReader(c).ReadString(' ')
-		fmt.Printf("Receiving2\n%s", message)
-		if err != nil {
-			fmt.Println("Read Error: ", err)
+	scanner := bufio.NewScanner(bufio.NewReader(c))
+	data := ""
+	line := ""
+	for scanner.Scan() {
+		line = scanner.Text()
+		data += line + "\n"
+		if len(line) == 0 {
+			break
 		}
-		//fmt.Printf("Receiving3\n")
-		fmt.Printf("Message Received: %s", message)
 	}
+	fmt.Printf("RECEIVED:\n%s", data)
 }
 
 func getUserInput() int {
 	input := 0
-	fmt.Println("2 = options. 3 = CFNL. 4. end")
+	fmt.Println("1:OPTIONS 2:DESCRIBE 9:end")
 	fmt.Scan(&input)
 	return input
 }
@@ -80,12 +77,32 @@ func getUserInput() int {
 func getCommand(input int, url string) string {
 	command := ""
 	switch input {
-	case 2:
+	case 1:
 		command = fmt.Sprintf("OPTIONS rtsp://%s/videoMain RTSP/1.0\r\nCSeq: 1\r\n\r\n", url)
+		/*
+			OPTIONS rtsp://127.0.0.1:5000/videoMain RTSP/1.0
+			CSeq: 1
+		*/
+	case 2:
+		command = fmt.Sprintf("DESCRIBE rtsp://%s/videoMain RTSP/1.0\r\nAccept: application/sdp\r\nCSeq: 2\r\n\r\n", url)
+		/*
+			DESCRIBE rtsp://192.168.1.11:88/videoMain RTSP/1.0
+			Accept: application/sdp
+			CSeq: 2
+		*/
 	case 3:
-		command = "\r\n"
-	case 4:
+		command = fmt.Sprintf("DESCRIBE rtsp://%s/videoMain RTSP/1.0\r\nAccept: application/sdp\r\nCSeq: 3\r\n\r\n", url)
+
+	case 9:
 		command = "end"
 	}
 	return command
 }
+
+/*
+DESCRIBE rtsp://192.168.1.11:88/videoMain RTSP/1.0
+Accept: application/sdp
+CSeq: 3
+User-Agent: Lavf58.38.101
+Authorization: Digest username="foscam", realm="Foscam IPCam Living Video", nonce="d4dea19512f55715153c33444c826135", uri="rtsp://192.168.1.11:88/videoMain", response="56b96e5d53070d39b54c82a2184501bc"
+*/
