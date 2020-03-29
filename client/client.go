@@ -60,14 +60,13 @@ func connectionRead(c *net.TCPConn) {
 		fmt.Printf("Receiving1\n")
 		//test, _ := c.Read([]byte("C"))
 		//fmt.Printf("Message Received: %d", test)
-		buf := bufio.NewReader(c)
-		message, _ := buf.ReadString(' ')
+		message, err := bufio.NewReader(c).ReadString(' ')
 		fmt.Printf("Receiving2\n%s", message)
-		//if err != nil {
-		//	fmt.Println("Read Error: ", err)
-		//}
+		if err != nil {
+			fmt.Println("Read Error: ", err)
+		}
 		//fmt.Printf("Receiving3\n")
-		//fmt.Printf("Message Received: %s", message)
+		fmt.Printf("Message Received: %s", message)
 	}
 }
 
@@ -82,8 +81,7 @@ func getCommand(input int, url string) string {
 	command := ""
 	switch input {
 	case 2:
-		command = fmt.Sprintf("OPTIONS rtsp://%s RTSP/1.0\r\nCSeq: 1", url) //\r\nCseq: 1\r\nRequire: implicit-play\r\n", url)
-		command = "Hello"
+		command = fmt.Sprintf("OPTIONS rtsp://%s/videoMain RTSP/1.0\r\nCSeq: 1\r\n\r\n", url)
 	case 3:
 		command = "\r\n"
 	case 4:
