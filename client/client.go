@@ -10,43 +10,51 @@ import (
 )
 
 type rtspConn struct {
-	c          *net.TCPConn
-	domain     string
-	port       int
-	username   string
-	password   string
-	domainport string
-	uri        string
-	nonce      string
-	realm      string
+	c               *net.TCPConn
+	domain          string
+	port            int
+	username        string
+	password        string
+	domainport      string
+	uri             string
+	nonce           string
+	realm           string
+	command         string
+	expectedEndLine string
 }
 
 func newRtspConn(domain string, port int, username, password string) rtspConn {
 	domainport := fmt.Sprintf("%s:%d", domain, port)
 	return rtspConn{
-		c:          connectionOpen(domainport),
-		domain:     domain,
-		port:       port,
-		username:   username,
-		password:   password,
-		uri:        fmt.Sprintf("rtsp://%s/videoMain", domainport),
-		domainport: domainport,
-		nonce:      "",
-		realm:      ""}
+		c:               connectionOpen(domainport),
+		domain:          domain,
+		port:            port,
+		username:        username,
+		password:        password,
+		uri:             fmt.Sprintf("rtsp://%s/videoMain", domainport),
+		domainport:      domainport,
+		nonce:           "",
+		realm:           "",
+		command:         "",
+		expectedEndLine: ""}
 }
 
 //Client - basic tcp client to make rtsp calls to a home foscam
 func Client(domain string, port int, username, password string) {
-	rtsp := newRtspConn(domain, port, username, password)
-	command := ""
-	expectedEndLine := ""
-	for command != "end" {
+	r := newRtspConn(domain, port, username, password)
+	for {
+		fmt.Printf("main_loop\n")
 		input := getUserInput()
-		command, expectedEndLine = getCommand(input, rtsp)
-		connectionWrite(rtsp.c, command)
-		rtsp = connectionRead(rtsp, expectedEndLine)
+		r = getCommand(r, input)
+		if r.command == "end" {
+			break
+		} else {
+			connectionWrite(r)
+			r = connectionRead(r)
+		}
 	}
-	connectionClose(rtsp)
+	fmt.Printf("end main_loop\n")
+	connectionClose(r)
 }
 
 func connectionOpen(domainport string) *net.TCPConn {
@@ -70,15 +78,15 @@ func connectionClose(r rtspConn) {
 	r.c.Close()
 }
 
-func connectionWrite(c *net.TCPConn, command string) {
-	count, err := c.Write([]byte(command))
+func connectionWrite(r rtspConn) {
+	count, err := r.c.Write([]byte(r.command))
 	if err != nil {
 		fmt.Println("Write Error: ", err, count)
 	}
-	fmt.Printf("Sent command %d chars\n%s\n", count, command)
+	fmt.Printf("Sent command %d chars\n%s\n", count, r.command)
 }
 
-func connectionRead(r rtspConn, expectedEndLine string) rtspConn {
+func connectionRead(r rtspConn) rtspConn {
 	scanner := bufio.NewScanner(bufio.NewReader(r.c))
 	data := ""
 	line := ""
@@ -86,7 +94,7 @@ func connectionRead(r rtspConn, expectedEndLine string) rtspConn {
 		line = scanner.Text()
 		data += line + "\n"
 		fmt.Printf("LINE:%s\n", line)
-		if line == expectedEndLine {
+		if line == r.expectedEndLine {
 			break
 		}
 	}
@@ -127,13 +135,11 @@ func getUserInput() int {
 	return input
 }
 
-func getCommand(input int, r rtspConn) (string, string) {
-	command := ""
-	expectedEndLine := ""
+func getCommand(r rtspConn, input int) rtspConn {
 	switch input {
 	case 1:
-		command = fmt.Sprintf("OPTIONS %s RTSP/1.0\r\nCSeq: 1\r\n\r\n", r.uri)
-		expectedEndLine = ""
+		r.command = fmt.Sprintf("OPTIONS %s RTSP/1.0\r\nCSeq: 1\r\n\r\n", r.uri)
+		r.expectedEndLine = ""
 		/*
 			Client Request
 			>>>>>>>>>>>>>>>>>>>>>>>
@@ -148,8 +154,8 @@ func getCommand(input int, r rtspConn) (string, string) {
 			Public: OPTIONS, DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE, GET_PARAMETER, SET_PARAMETER
 		*/
 	case 2:
-		command = fmt.Sprintf("DESCRIBE %s RTSP/1.0\r\nAccept: application/sdp\r\nCSeq: 2\r\n\r\n", r.uri)
-		expectedEndLine = ""
+		r.command = fmt.Sprintf("DESCRIBE %s RTSP/1.0\r\nAccept: application/sdp\r\nCSeq: 2\r\n\r\n", r.uri)
+		r.expectedEndLine = ""
 		/*
 			Client Request
 			>>>>>>>>>>>>>>>>>>>>>>>
@@ -167,8 +173,8 @@ func getCommand(input int, r rtspConn) (string, string) {
 	case 3:
 		method := "DESCRIBE"
 		response := getResponse(r, method)
-		command = fmt.Sprintf("%s %s RTSP/1.0\r\nAccept: application/sdp\r\nCSeq: 3\r\nAuthorization: Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"\r\n\r\n", method, r.uri, r.username, r.realm, r.nonce, r.uri, response)
-		expectedEndLine = "a=control:track2"
+		r.command = fmt.Sprintf("%s %s RTSP/1.0\r\nAccept: application/sdp\r\nCSeq: 3\r\nAuthorization: Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"\r\n\r\n", method, r.uri, r.username, r.realm, r.nonce, r.uri, response)
+		r.expectedEndLine = "a=control:track2"
 		/*
 			Client Request
 			>>>>>>>>>>>>>>>>>>>>>>>
@@ -209,10 +215,10 @@ func getCommand(input int, r rtspConn) (string, string) {
 			a=control:track2
 		*/
 	case 9:
-		command = "end"
-		expectedEndLine = ""
+		r.command = "end"
+		r.expectedEndLine = ""
 	}
-	return command, expectedEndLine
+	return r
 }
 
 func getResponse(r rtspConn, method string) string {
