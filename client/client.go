@@ -2,25 +2,29 @@ package client
 
 import (
 	"bufio"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"net"
+	"strings"
 )
 
-const (
-	connType = "tcp"
-)
+type rtspConn struct {
+	c     *net.TCPConn
+	nonce string
+}
 
-//Client - basic tcp client
+//Client - basic tcp client to make rtsp calls to a home foscam
 func Client(url string) {
-	c := connectionOpen(url)
+	rtsp := rtspConn{c: connectionOpen(url), nonce: ""}
 	command := "Hello"
 	for command != "end" {
 		input := getUserInput()
-		command = getCommand(input, url)
-		connectionWrite(c, command)
-		connectionRead(c)
+		command = getCommand(input, url, rtsp)
+		connectionWrite(rtsp.c, command)
+		rtsp = connectionRead(rtsp)
 	}
-	connectionClose(c, url)
+	connectionClose(rtsp.c, url)
 }
 
 func connectionOpen(url string) *net.TCPConn {
@@ -53,8 +57,8 @@ func connectionWrite(c *net.TCPConn, command string) {
 	fmt.Printf("Sent command %d chars\n\r%s\n", count, command)
 }
 
-func connectionRead(c *net.TCPConn) {
-	scanner := bufio.NewScanner(bufio.NewReader(c))
+func connectionRead(r rtspConn) rtspConn {
+	scanner := bufio.NewScanner(bufio.NewReader(r.c))
 	data := ""
 	line := ""
 	for scanner.Scan() {
@@ -65,16 +69,22 @@ func connectionRead(c *net.TCPConn) {
 		}
 	}
 	fmt.Printf("RECEIVED:\n%s", data)
+	i := strings.Index(data, "nonce")
+	if i != -1 {
+		r.nonce = data[i+7 : i+39]
+		fmt.Printf("\n\n%s\n\n", r.nonce)
+	}
+	return r
 }
 
 func getUserInput() int {
 	input := 0
-	fmt.Println("1:OPTIONS 2:DESCRIBE 9:end")
+	fmt.Println("1:OPTIONS 2:DESCRIBE 3:AUTH 9:end")
 	fmt.Scan(&input)
 	return input
 }
 
-func getCommand(input int, url string) string {
+func getCommand(input int, url string, r rtspConn) string {
 	command := ""
 	switch input {
 	case 1:
@@ -91,12 +101,26 @@ func getCommand(input int, url string) string {
 			CSeq: 2
 		*/
 	case 3:
-		command = fmt.Sprintf("DESCRIBE rtsp://%s/videoMain RTSP/1.0\r\nAccept: application/sdp\r\nCSeq: 3\r\n\r\n", url)
+		username := "<yourownusername>"
+		password := "<yourownpassword>"
+		realm := "Foscam IPCam Living Video"
+		method := "DESCRIBE"
+		response := getResponse(username, realm, password, method, url, r.nonce)
+		command = fmt.Sprintf("%s rtsp://%s/videoMain RTSP/1.0\r\nAccept: application/sdp\r\nCSeq: 3\r\nAuthorization: Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"rtsp://%s/videoMain\", response=\"%s\"\r\n\r\n", method, url, username, realm, r.nonce, url, response)
 
 	case 9:
 		command = "end"
 	}
 	return command
+}
+
+func getResponse(username, realm, password, method, url, nonce string) string {
+	//https://stackoverflow.com/questions/55379440/rtsp-video-streaming-with-authentication
+	//https://mrwaggel.be/post/golang-hash-sum-and-checksum-to-string-tutorial-and-examples/
+	ha1 := md5.Sum([]byte(fmt.Sprintf("%s:%s:%s", username, realm, password)))
+	ha2 := md5.Sum([]byte(fmt.Sprintf("%s:rtsp://%s/videoMain", method, url)))
+	ha3 := md5.Sum([]byte(fmt.Sprintf("%s:%s:%s", hex.EncodeToString(ha1[:]), nonce, hex.EncodeToString(ha2[:]))))
+	return hex.EncodeToString(ha3[:])
 }
 
 /*
