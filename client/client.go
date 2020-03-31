@@ -6,13 +6,20 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 )
 
 type rtspConn struct {
 	c               *net.TCPConn
+	localDomain     string
+	localPort1      int
+	localPort2      int
+	localPortRange  string
 	domain          string
 	port            int
+	remotePort      string
+	remoteURI       string
 	username        string
 	password        string
 	domainport      string
@@ -23,12 +30,32 @@ type rtspConn struct {
 	expectedEndLine string
 }
 
+func getLocalDomainPort(c *net.TCPConn) (string, int) {
+	addr := c.LocalAddr()
+	addrAsString := addr.String()
+	addrAsSlice := strings.Split(addrAsString, ":")
+	localDomain := strings.Join([]string{addrAsSlice[0]}, "")
+	localPort1AsString := strings.Join([]string{addrAsSlice[1]}, "")
+	localPort1, _ := strconv.Atoi(localPort1AsString)
+	return localDomain, localPort1
+}
+
 func newRtspConn(domain string, port int, username, password string) rtspConn {
 	domainport := fmt.Sprintf("%s:%d", domain, port)
+	c := connectionOpen(domainport)
+	localDomain, localPort1 := getLocalDomainPort(c)
+	localPort2 := localPort1 + 1
+	localPortRange := fmt.Sprintf("%d-%d", localPort1, localPort2)
 	return rtspConn{
-		c:               connectionOpen(domainport),
+		c:               c,
+		localDomain:     localDomain,
+		localPort1:      localPort1,
+		localPort2:      localPort2,
+		localPortRange:  localPortRange,
 		domain:          domain,
 		port:            port,
+		remotePort:      "",
+		remoteURI:       "",
 		username:        username,
 		password:        password,
 		uri:             fmt.Sprintf("rtsp://%s/videoMain", domainport),
@@ -42,8 +69,9 @@ func newRtspConn(domain string, port int, username, password string) rtspConn {
 //Client - basic tcp client to make rtsp calls to a home foscam
 func Client(domain string, port int, username, password string) {
 	r := newRtspConn(domain, port, username, password)
+	port = r.c.RemoteAddr().(*net.TCPAddr).Port
+	fmt.Printf("PORT: %d\n\n\n", port)
 	for {
-		fmt.Printf("main_loop\n")
 		input := getUserInput()
 		r = getCommand(r, input)
 		if r.command == "end" {
@@ -53,19 +81,17 @@ func Client(domain string, port int, username, password string) {
 			r = connectionRead(r)
 		}
 	}
-	fmt.Printf("end main_loop\n")
 	connectionClose(r)
 }
 
 func connectionOpen(domainport string) *net.TCPConn {
 	fmt.Printf("CLIENT: Opening connection to %s...\n", domainport)
 
-	addr, err := net.ResolveTCPAddr("tcp", domainport)
+	server, err := net.ResolveTCPAddr("tcp", domainport)
 	if err != nil {
 		fmt.Printf("ResolveTCPAddr Error: %s\n", err.Error())
 	}
-
-	c, err := net.DialTCP("tcp", nil, addr)
+	c, err := net.DialTCP("tcp", nil, server)
 	if err != nil {
 		fmt.Printf("DialTCP Error: %s\n", err.Error())
 	}
@@ -93,7 +119,6 @@ func connectionRead(r rtspConn) rtspConn {
 	for scanner.Scan() {
 		line = scanner.Text()
 		data += line + "\n"
-		fmt.Printf("LINE:%s\n", line)
 		if line == r.expectedEndLine {
 			break
 		}
@@ -128,9 +153,47 @@ func getNamedQuotedValue(defaultValue, data, name string) string {
 	return val
 }
 
+//getNamedColonValue gets the string following the colon
+//after finding the name in a supplied string e.g. if name is "realm"
+//realm: Testy\n would return "Testy"
+func getNamedColonValue(defaultValue, data, name string) string {
+	val := defaultValue
+
+	word := strings.Index(data, name)
+	fmt.Printf("word: %s\n", word)
+	if word != -1 {
+		start := word + len(name) + 2
+		fmt.Printf("word: %s\n", start)
+		length := strings.Index(data[start:], "\n")
+		fmt.Printf("word: %s\n", length)
+		if length != -1 {
+			val = data[start : start+length]
+		}
+		fmt.Printf("%s\n", val)
+	}
+
+	return val
+}
+
+//getPortFromURL gets the string following the second colon in a url
+//rtsp://testy:1234/testy2\n would return string "1234"
+func getPortFromURL(defaultValue, data string) string {
+	val := defaultValue
+	firstColon := strings.Index(data, ":")
+	fmt.Printf("word: %s\n", firstColon)
+	if firstColon != -1 {
+		secondColon := strings.Index(data[firstColon+1:], ":")
+		fmt.Printf("word: %s\n", secondColon)
+		val = data[firstColon+secondColon:]
+		fmt.Printf("%s\n", val)
+	}
+
+	return val
+}
+
 func getUserInput() int {
 	input := 0
-	fmt.Println("1:OPTIONS 2:DESCRIBE 3:AUTH 9:end")
+	fmt.Println("1:OPTIONS 2:DESCRIBE 3:AUTH 4:SETUP 9:end")
 	fmt.Scan(&input)
 	return input
 }
@@ -172,7 +235,7 @@ func getCommand(r rtspConn, input int) rtspConn {
 		*/
 	case 3:
 		method := "DESCRIBE"
-		response := getResponse(r, method)
+		response := getResponse(r, method, false)
 		r.command = fmt.Sprintf("%s %s RTSP/1.0\r\nAccept: application/sdp\r\nCSeq: 3\r\nAuthorization: Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"\r\n\r\n", method, r.uri, r.username, r.realm, r.nonce, r.uri, response)
 		r.expectedEndLine = "a=control:track2"
 		/*
@@ -214,6 +277,31 @@ func getCommand(r rtspConn, input int) rtspConn {
 			b=AS:64
 			a=control:track2
 		*/
+	case 4:
+		method := "SETUP"
+		response := getResponse(r, method, true)
+		url := getNamedColonValue("", "asdasdasdasd\nContent-Base: test:blah de blah:port\ntesty", "Content-Base")
+		fmt.Printf("url: %s\n", url)
+		r.remotePort = getPortFromURL("", url)
+		r.remoteURI = fmt.Sprintf("rtsp://%s:%s/videoMain/track1", r.domain, r.remotePort)
+		r.command = fmt.Sprintf("%s %s RTSP/1.0\r\nTransport: RTP/AVP/UDP;unicast;client_port=%s\r\nCSeq: 4\r\nAuthorization: Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"\r\n\r\n", method, r.remoteURI, r.localPortRange, r.username, r.realm, r.nonce, r.remoteURI, response)
+		r.expectedEndLine = ""
+		/*
+			Client Request
+			>>>>>>>>>>>>>>>>>>>>>>>
+			SETUP rtsp://192.168.1.11:65534/videoMain/track1 RTSP/1.0
+			Transport: RTP/AVP/UDP;unicast;client_port=22292-22293
+			CSeq: 4
+			Authorization: Digest username="foscam", realm="Foscam IPCam Living Video", nonce="d4dea19512f55715153c33444c826135", uri="rtsp://192.168.1.11:65534/videoMain/track1", response="041d36dbb3f0b82a18d8335775aad078"
+
+			Server Response example
+			>>>>>>>>>>>>>>>>>>>>>>>
+			RTSP/1.0 200 OK
+			CSeq: 4
+			Date: Sun, Mar 29 2020 04:55:49 GMT
+			Transport: RTP/AVP;unicast;destination=192.168.1.157;source=192.168.1.11;client_port=22292-22293;server_port=6970-6971
+			Session: 59F3B34B;timeout=65
+		*/
 	case 9:
 		r.command = "end"
 		r.expectedEndLine = ""
@@ -221,11 +309,14 @@ func getCommand(r rtspConn, input int) rtspConn {
 	return r
 }
 
-func getResponse(r rtspConn, method string) string {
+func getResponse(r rtspConn, method string, useSecondDomain bool) string {
 	//https://stackoverflow.com/questions/55379440/rtsp-video-streaming-with-authentication
 	//https://mrwaggel.be/post/golang-hash-sum-and-checksum-to-string-tutorial-and-examples/
 	ha1 := md5.Sum([]byte(fmt.Sprintf("%s:%s:%s", r.username, r.realm, r.password)))
 	ha2 := md5.Sum([]byte(fmt.Sprintf("%s:rtsp://%s/videoMain", method, r.domainport)))
+	if useSecondDomain {
+		ha2 = md5.Sum([]byte(fmt.Sprintf("%s:%s", method, r.remoteURI)))
+	}
 	ha3 := md5.Sum([]byte(fmt.Sprintf("%s:%s:%s", hex.EncodeToString(ha1[:]), r.nonce, hex.EncodeToString(ha2[:]))))
 	return hex.EncodeToString(ha3[:])
 }
