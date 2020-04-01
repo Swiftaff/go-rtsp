@@ -20,6 +20,8 @@ type rtspConn struct {
 	port            int
 	remotePort      string
 	remoteURI       string
+	remoteURItrack1 string
+	remoteURItrack2 string
 	username        string
 	password        string
 	domainport      string
@@ -28,6 +30,7 @@ type rtspConn struct {
 	realm           string
 	command         string
 	expectedEndLine string
+	session         string
 }
 
 func getLocalDomainPort(c *net.TCPConn) (string, int) {
@@ -56,6 +59,8 @@ func newRtspConn(domain string, port int, username, password string) rtspConn {
 		port:            port,
 		remotePort:      "",
 		remoteURI:       "",
+		remoteURItrack1: "",
+		remoteURItrack2: "",
 		username:        username,
 		password:        password,
 		uri:             fmt.Sprintf("rtsp://%s/videoMain", domainport),
@@ -63,7 +68,8 @@ func newRtspConn(domain string, port int, username, password string) rtspConn {
 		nonce:           "",
 		realm:           "",
 		command:         "",
-		expectedEndLine: ""}
+		expectedEndLine: "",
+		session:         ""}
 }
 
 //Client - basic tcp client to make rtsp calls to a home foscam
@@ -128,6 +134,13 @@ func connectionRead(r rtspConn) rtspConn {
 	//set properties if the server response contains them
 	r.nonce = getNamedQuotedValue(r.nonce, data, "nonce")
 	r.realm = getNamedQuotedValue(r.realm, data, "realm")
+	r.session = getNamedColonValue(r.session, data, "Session")
+
+	url := getNamedColonValue("", data, "Content-Base")
+	r.remotePort = getPortFromURL("", url)
+	r.remoteURI = fmt.Sprintf("rtsp://%s:%s/videoMain/", r.domain, r.remotePort)
+	r.remoteURItrack1 = fmt.Sprintf("rtsp://%s:%s/videoMain/track1", r.domain, r.remotePort)
+	r.remoteURItrack2 = fmt.Sprintf("rtsp://%s:%s/videoMain/track2", r.domain, r.remotePort)
 	return r
 }
 
@@ -158,20 +171,14 @@ func getNamedQuotedValue(defaultValue, data, name string) string {
 //realm: Testy\n would return "Testy"
 func getNamedColonValue(defaultValue, data, name string) string {
 	val := defaultValue
-
 	word := strings.Index(data, name)
-	fmt.Printf("word: %s\n", word)
 	if word != -1 {
 		start := word + len(name) + 2
-		fmt.Printf("word: %s\n", start)
 		length := strings.Index(data[start:], "\n")
-		fmt.Printf("word: %s\n", length)
 		if length != -1 {
 			val = data[start : start+length]
 		}
-		fmt.Printf("%s\n", val)
 	}
-
 	return val
 }
 
@@ -180,20 +187,26 @@ func getNamedColonValue(defaultValue, data, name string) string {
 func getPortFromURL(defaultValue, data string) string {
 	val := defaultValue
 	firstColon := strings.Index(data, ":")
-	fmt.Printf("word: %s\n", firstColon)
 	if firstColon != -1 {
 		secondColon := strings.Index(data[firstColon+1:], ":")
-		fmt.Printf("word: %s\n", secondColon)
-		val = data[firstColon+secondColon:]
-		fmt.Printf("%s\n", val)
-	}
+		nextForwardSlash := strings.Index(data[firstColon+secondColon+1:], "/")
+		endOfLine := strings.Index(data[firstColon+secondColon+1:], "\n")
+		if nextForwardSlash != -1 {
+			endOfLine = nextForwardSlash
+		}
+		if endOfLine == -1 {
+			val = data[firstColon+secondColon:]
+		} else {
+			val = data[firstColon+secondColon : firstColon+secondColon+endOfLine]
+		}
 
+	}
 	return val
 }
 
 func getUserInput() int {
 	input := 0
-	fmt.Println("1:OPTIONS 2:DESCRIBE 3:AUTH 4:SETUP 9:end")
+	fmt.Println("1:OPTIONS 2:DESCRIBE 3:AUTH 4:SETUP(video) 5:SETUP(audio not done yet) 6:PLAY 9:end")
 	fmt.Scan(&input)
 	return input
 }
@@ -280,11 +293,7 @@ func getCommand(r rtspConn, input int) rtspConn {
 	case 4:
 		method := "SETUP"
 		response := getResponse(r, method, true)
-		url := getNamedColonValue("", "asdasdasdasd\nContent-Base: test:blah de blah:port\ntesty", "Content-Base")
-		fmt.Printf("url: %s\n", url)
-		r.remotePort = getPortFromURL("", url)
-		r.remoteURI = fmt.Sprintf("rtsp://%s:%s/videoMain/track1", r.domain, r.remotePort)
-		r.command = fmt.Sprintf("%s %s RTSP/1.0\r\nTransport: RTP/AVP/UDP;unicast;client_port=%s\r\nCSeq: 4\r\nAuthorization: Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"\r\n\r\n", method, r.remoteURI, r.localPortRange, r.username, r.realm, r.nonce, r.remoteURI, response)
+		r.command = fmt.Sprintf("%s %s RTSP/1.0\r\nTransport: RTP/AVP/UDP;unicast;client_port=%s\r\nCSeq: 4\r\nAuthorization: Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"\r\n\r\n", method, r.remoteURItrack1, r.localPortRange, r.username, r.realm, r.nonce, r.remoteURItrack1, response)
 		r.expectedEndLine = ""
 		/*
 			Client Request
@@ -301,6 +310,57 @@ func getCommand(r rtspConn, input int) rtspConn {
 			Date: Sun, Mar 29 2020 04:55:49 GMT
 			Transport: RTP/AVP;unicast;destination=192.168.1.157;source=192.168.1.11;client_port=22292-22293;server_port=6970-6971
 			Session: 59F3B34B;timeout=65
+		*/
+
+	//skip track2 for now...
+	/*
+		case 5:
+			method := "SETUP"
+			response := getResponse(r, method, true)
+			r.command = fmt.Sprintf("%s %s RTSP/1.0\r\nTransport: RTP/AVP/UDP;unicast;client_port=%s\r\nCSeq: 4\r\nAuthorization: Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"\r\n\r\n", method, r.remoteURI, r.localPortRange, r.username, r.realm, r.nonce, r.remoteURI, response)
+			r.expectedEndLine = ""
+			/*
+			SETUP rtsp://192.168.1.11:65534/videoMain/track2 RTSP/1.0
+			Transport: RTP/AVP/UDP;unicast;client_port=22294-22295
+			CSeq: 5
+			Session: 59F3B34B
+			Authorization: Digest username="foscam", realm="Foscam IPCam Living Video", nonce="d4dea19512f55715153c33444c826135", uri="rtsp://192.168.1.11:65534/videoMain/track2", response="43549f4c211b5f71637cc0284c6647f3"
+
+
+	*/
+
+	case 6:
+		method := "PLAY"
+		response := getResponse(r, method, true)
+		r.command = fmt.Sprintf("%s %s RTSP/1.0\r\nRange: npt=0-\r\nCSeq: 6\r\nSession: %s\r\nAuthorization: Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"\r\n\r\n", method, r.remoteURI, r.session, r.username, r.realm, r.nonce, r.remoteURI, response)
+		r.expectedEndLine = ""
+		/*
+			Client Request
+			>>>>>>>>>>>>>>>>>>>>>>>
+			first...
+			RDT
+			RTCP
+			UDP
+			RTCP
+
+			then...
+			PLAY rtsp://192.168.1.11:65534/videoMain/ RTSP/1.0
+			Range: npt=0.000-
+			CSeq: 6
+			Session: 59F3B34B
+			Authorization: Digest username="foscam", realm="Foscam IPCam Living Video", nonce="d4dea19512f55715153c33444c826135", uri="rtsp://192.168.1.11:65534/videoMain/", response="f12c2411ddb14be3eb21fd9d0c3528c9"
+
+
+			Server Response example
+			>>>>>>>>>>>>>>>>>>>>>>>
+			RTSP/1.0 200 OK
+			CSeq: 6
+			Date: Sun, Mar 29 2020 04:55:49 GMT
+			Range: npt=0.000-
+			Session: 59F3B34B
+			RTP-Info: url=rtsp://192.168.1.11:65534/videoMain/track1;seq=14200;rtptime=1889286248,url=rtsp://192.168.1.11:65534/videoMain/track2;seq=44635;rtptime=2157729542
+
+
 		*/
 	case 9:
 		r.command = "end"
