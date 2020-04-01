@@ -73,10 +73,24 @@ func newRtspConn(domain string, port int, username, password string) rtspConn {
 }
 
 //Client - basic tcp client to make rtsp calls to a home foscam
+//calls main handshake methods sequentially, automatically
 func Client(domain string, port int, username, password string) {
 	r := newRtspConn(domain, port, username, password)
 	port = r.c.RemoteAddr().(*net.TCPAddr).Port
-	fmt.Printf("PORT: %d\n\n\n", port)
+	commands := []int{1, 2, 3, 4, 6}
+	for i := 0; i < len(commands); i++ {
+		r = getCommand(r, commands[i])
+		connectionWrite(r)
+		r = connectionRead(r)
+	}
+	//connectionClose(r)
+}
+
+//ManualClient - basic tcp client to make rtsp calls to a home foscam
+//you need to type the key for each method, manually
+func ManualClient(domain string, port int, username, password string) {
+	r := newRtspConn(domain, port, username, password)
+	port = r.c.RemoteAddr().(*net.TCPAddr).Port
 	for {
 		input := getUserInput()
 		r = getCommand(r, input)

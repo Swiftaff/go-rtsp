@@ -18,15 +18,16 @@ func main() {
 	password := os.Getenv("password")
 
 	var which int
-	fmt.Printf("0 = Server. 1 = Client\n")
+	fmt.Printf("0 = Server. 1 = ManualClient. 2 = AutoClient\n")
 	fmt.Scan(&which)
 
 	switch which {
 	case 0:
 		server.Server(domain, port)
 	case 1:
+		client.ManualClient(domain, port, username, password)
+	case 2:
 		client.Client(domain, port, username, password)
-
 	}
 
 }
